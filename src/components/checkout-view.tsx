@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { changeModeAction, demoPayAction, squadLinksAction } from "@/app/actions";
+import { cancelHoldAction, changeModeAction, demoPayAction, squadLinksAction } from "@/app/actions";
 import { longDate, mmss, rangeLabel, rupees } from "@/lib/format";
 import { payShare } from "@/lib/use-razorpay";
 import { cn } from "@/lib/utils";
@@ -45,6 +45,8 @@ export function CheckoutView({ booking, shares }: { booking: CheckoutBooking; sh
   const [busy, startBusy] = useTransition();
   const [paying, setPaying] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [cancelledNow, setCancelledNow] = useState(false);
 
   const split = booking.mode === "SPLIT";
   const paidCount = shares.filter((s) => s.status === "PAID").length;
@@ -108,10 +110,23 @@ export function CheckoutView({ booking, shares }: { booking: CheckoutBooking; sh
     router.refresh();
   }
 
-  if (booking.status === "EXPIRED" || booking.status === "CANCELLED" || secondsLeft <= 0) {
+  function cancel() {
+    startBusy(async () => {
+      const res = await cancelHoldAction(booking.id);
+      if (res.ok) {
+        setCancelledNow(true);
+        toast.success("Booking cancelled");
+      } else toast.error(res.error);
+      setConfirmCancel(false);
+      router.refresh();
+    });
+  }
+
+  if (cancelledNow || booking.status === "EXPIRED" || booking.status === "CANCELLED" || secondsLeft <= 0) {
+    const cancelled = cancelledNow || booking.status === "CANCELLED";
     return (
       <div className="mx-auto flex max-w-lg flex-col gap-4 rounded-[20px] border bg-card p-6 text-center">
-        <h1 className="text-2xl font-semibold">This hold has ended</h1>
+        <h1 className="text-2xl font-semibold">{cancelled ? "Booking cancelled" : "This hold has ended"}</h1>
         <p className="text-muted-foreground">
           The slots went back on sale. Anyone who already paid gets an automatic refund to their original payment method.
         </p>
@@ -274,6 +289,35 @@ export function CheckoutView({ booking, shares }: { booking: CheckoutBooking; sh
         <p className="text-xs text-muted-foreground">
           {booking.demo ? "No money is charged." : "Paid through Razorpay: UPI, cards and netbanking."}
         </p>
+        {booking.isOrganiser && booking.status === "HELD" && (
+          <div className="border-t pt-3">
+            {confirmCancel ? (
+              <div className="flex flex-col gap-3" role="alertdialog" aria-labelledby="cancel-title" aria-describedby="cancel-desc">
+                <div>
+                  <p id="cancel-title" className="font-semibold">Cancel this booking?</p>
+                  <p id="cancel-desc" className="text-sm text-muted-foreground">
+                    {paidCount > 0
+                      ? `Your slots go back on sale and the ${paidCount} ${paidCount === 1 ? "player who paid is" : "players who paid are"} refunded automatically.`
+                      : "Your slots go back on sale. Nobody has paid yet, so nothing is charged."}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" disabled={busy} onClick={() => setConfirmCancel(false)} className="h-11 flex-1 rounded-xl border bg-card font-semibold hover:bg-secondary">
+                    Keep it
+                  </button>
+                  <button type="button" disabled={busy} onClick={cancel} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-destructive font-semibold text-white hover:bg-destructive/90 disabled:opacity-60">
+                    {busy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+                    Yes, cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" disabled={paying} onClick={() => setConfirmCancel(true)} className="w-full rounded-xl py-2 text-sm font-semibold text-destructive hover:bg-destructive/8">
+                Cancel booking
+              </button>
+            )}
+          </div>
+        )}
       </aside>
     </div>
   );

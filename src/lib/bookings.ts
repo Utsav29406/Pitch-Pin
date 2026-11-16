@@ -244,7 +244,7 @@ async function refundShare(shareId: string) {
   await razorpay().payments.refund(share.razorpayPaymentId, {
     amount: share.amount,
     speed: "normal",
-    notes: { shareId: share.id, reason: "Booking hold expired before full payment" },
+    notes: { shareId: share.id, reason: "Booking cancelled or hold expired before full payment" },
   });
   await db().paymentShare.update({ where: { id: shareId }, data: { status: "REFUNDED", refundedAt: new Date() } });
 }
@@ -297,6 +297,23 @@ export async function cancelBooking(bookingId: string) {
     data: { status: "CANCELLED" },
   });
   if (done.count === 0) throw new BookingError("This booking is already cancelled or expired.");
+  await releaseCancelled(bookingId);
+}
+
+/**
+ * Organiser cancels their own hold from checkout, before it's fully paid. Frees the hours and
+ * refunds any squad member who already paid. Confirmed bookings can't be cancelled here.
+ */
+export async function cancelHold(user: CurrentUser, bookingId: string) {
+  const done = await db().booking.updateMany({
+    where: { id: bookingId, userId: user.id, status: "HELD" },
+    data: { status: "CANCELLED" },
+  });
+  if (done.count === 0) throw new BookingError("This booking can't be cancelled any more. It may already be paid, cancelled or expired.");
+  await releaseCancelled(bookingId);
+}
+
+async function releaseCancelled(bookingId: string) {
   await db().bookedSlot.deleteMany({ where: { bookingId } });
   const shares = await db().paymentShare.findMany({ where: { bookingId } });
   for (const s of shares) {

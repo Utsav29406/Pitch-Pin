@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import {
   BookingError,
+  cancelHold,
   changePaymentMode,
   createHold,
   createSquadPaymentLinks,
@@ -54,6 +55,20 @@ export async function changeModeAction(bookingId: string, mode: "FULL" | "SPLIT"
   try {
     await changePaymentMode(user, bookingId, mode, squadSize);
     revalidatePath(`/checkout/${bookingId}`);
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Organiser cancels an unpaid hold from checkout. */
+export async function cancelHoldAction(bookingId: string): Promise<Result> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Sign in again.", needLogin: true };
+  try {
+    await cancelHold(user, bookingId);
+    revalidatePath(`/checkout/${bookingId}`);
+    revalidatePath("/bookings");
     return { ok: true };
   } catch (err) {
     return fail(err);
