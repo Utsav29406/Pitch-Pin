@@ -1,0 +1,223 @@
+// TurfUp data model.
+// Money is stored in paise (integer). Hours are 0–23 in IST.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Sport {
+  FOOTBALL
+  BOX_CRICKET
+  PICKLEBALL
+  BADMINTON
+  TENNIS
+}
+
+enum BookingStatus {
+  HELD
+  CONFIRMED
+  EXPIRED
+  CANCELLED
+}
+
+enum PaymentMode {
+  FULL
+  SPLIT
+}
+
+enum ShareStatus {
+  PENDING
+  PAID
+  REFUNDED
+}
+
+/// A player account. Sign in with email and password.
+model Profile {
+  id                String             @id @default(uuid()) @db.Uuid
+  email             String             @unique
+  passwordHash      String?
+  /// Google account id ("sub") once the user has signed in with Google.
+  googleId          String?            @unique
+  failedLogins      Int                @default(0)
+  lockedUntil       DateTime?
+  name              String?
+  phone             String?
+  emailOptIn        Boolean            @default(true)
+  pushOptIn         Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  sessions          Session[]
+  bookings          Booking[]
+  shares            PaymentShare[]
+  pushSubscriptions PushSubscription[]
+  /// Can approve turf claims at /admin. Set with `npm run make-admin -- you@example.com`.
+  isAdmin           Boolean            @default(false)
+  ownedVenues       Venue[]
+  claims            VenueClaim[]
+}
+
+/// Signed-in browser. `id` is the SHA-256 of the cookie token, never the token itself.
+model Session {
+  id        String   @id
+  userId    String   @db.Uuid
+  user      Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Venue {
+  id        String       @id @default(cuid())
+  slug      String       @unique
+  name      String
+  area      String
+  address   String
+  lat       Float
+  lng       Float
+  /// null until the turf has real TurfUp reviews
+  rating    Float?
+  /// Public page this listing was taken from (directory listings)
+  source    String?
+  /// true when lat/lng is the area centre, not the exact gate
+  approxPin Boolean      @default(false)
+  /// Google Maps search that lands on this exact turf (listings whose name alone is ambiguous)
+  mapsQuery String?
+  /// Courts and prices were filled in by PitchPin for the demo, not by the turf. Cleared when the owner saves real details.
+  demoPrices Boolean     @default(false)
+  amenities String[]
+  sports    Sport[]
+  photoUrl  String?
+  openHour  Int          @default(6)
+  closeHour Int          @default(24)
+  createdAt DateTime     @default(now())
+  courts    Court[]
+  /// The turf owner who manages this venue (null for directory listings nobody has claimed)
+  ownerId   String?      @db.Uuid
+  owner     Profile?     @relation(fields: [ownerId], references: [id])
+  claims    VenueClaim[]
+
+  @@index([ownerId])
+}
+
+model Court {
+  id           String       @id @default(cuid())
+  venueId      String
+  venue        Venue        @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  name         String
+  format       String
+  size         String?
+  sport        Sport
+  basePrice    Int
+  peakPrice    Int
+  peakFromHour Int          @default(18)
+  bookings     Booking[]
+  slots        BookedSlot[]
+
+  @@index([venueId])
+}
+
+model Booking {
+  id            String         @id @default(cuid())
+  code          String         @unique
+  userId        String         @db.Uuid
+  user          Profile        @relation(fields: [userId], references: [id])
+  courtId       String
+  court         Court          @relation(fields: [courtId], references: [id])
+  date          DateTime       @db.Date
+  startHour     Int
+  endHour       Int
+  amount        Int
+  status        BookingStatus  @default(HELD)
+  mode          PaymentMode
+  squadSize     Int            @default(1)
+  holdExpiresAt DateTime
+  confirmedAt   DateTime?
+  createdAt     DateTime       @default(now())
+  slots         BookedSlot[]
+  shares        PaymentShare[]
+
+  @@index([userId])
+  @@index([status, holdExpiresAt])
+}
+
+/// One row per court-hour that is held or booked. The unique index is what
+/// stops two people from taking the same hour. Rows are deleted when a hold expires.
+model BookedSlot {
+  id        String   @id @default(cuid())
+  bookingId String
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  courtId   String
+  court     Court    @relation(fields: [courtId], references: [id])
+  date      DateTime @db.Date
+  hour      Int
+
+  @@unique([courtId, date, hour])
+  @@index([courtId, date])
+}
+
+/// What one player owes for a booking. A FULL booking has one share.
+model PaymentShare {
+  id                    String      @id @default(cuid())
+  bookingId             String
+  booking               Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  userId                String?     @db.Uuid
+  user                  Profile?    @relation(fields: [userId], references: [id])
+  label                 String
+  position              Int         @default(0)
+  amount                Int
+  status                ShareStatus @default(PENDING)
+  razorpayOrderId       String?     @unique
+  razorpayPaymentLinkId String?     @unique
+  paymentLinkUrl        String?
+  razorpayPaymentId     String?     @unique
+  paidAt                DateTime?
+  refundedAt            DateTime?
+
+  @@index([bookingId])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String   @db.Uuid
+  user      Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+}
+
+/// Razorpay webhook event ids we have already processed (idempotency).
+model WebhookEvent {
+  id         String   @id
+  type       String
+  receivedAt DateTime @default(now())
+}
+
+enum ClaimStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// An owner asking to manage an existing directory listing. An admin approves it.
+model VenueClaim {
+  id        String      @id @default(cuid())
+  venueId   String
+  venue     Venue       @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  userId    String      @db.Uuid
+  user      Profile     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phone     String
+  role      String
+  message   String?
+  status    ClaimStatus @default(PENDING)
+  createdAt DateTime    @default(now())
+  decidedAt DateTime?
+
+  @@unique([venueId, userId])
+  @@index([status])
+}

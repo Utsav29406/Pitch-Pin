@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "Venue" ADD COLUMN     "approxPin" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "source" TEXT,
+ALTER COLUMN "rating" DROP NOT NULL,
+ALTER COLUMN "rating" DROP DEFAULT;
+
