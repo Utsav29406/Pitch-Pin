@@ -1,4 +1,4 @@
-# PitchPin (formerly TurfUp)
+# PitchPin 
 
 Turf and sports booking for Ahmedabad. Players find a turf, hold live slots, and pay in full or split the bill with their squad.
 
