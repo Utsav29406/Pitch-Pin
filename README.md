@@ -30,7 +30,7 @@ npx prisma migrate dev --name <change>   # after editing schema.prisma
 Players create an account and sign in with email + password. Accounts and sessions live in Neon (`Profile`, `Session`). Passwords are hashed with scrypt; the session cookie is httpOnly and lasts 30 days; 8 wrong passwords lock the account for 15 minutes. There is no password reset yet (it needs an email sender such as Resend).
 
 ### 2. Payments: demo mode (default) or Razorpay
-Without Razorpay keys the app runs in **demo payment mode**: checkout and squad pay links (`/pay/demo/<shareId>`) confirm bookings without charging anyone, and the UI says so. This is how the portfolio deployment runs. To take real money, add the keys below; demo payments switch off automatically.
+The app runs in **demo payment mode**: checkout and squad pay links (`/pay/demo/<shareId>`) confirm bookings without charging anyone, and the UI says so. This is how the portfolio deployment runs. To take real money, add the keys below; demo payments switch off automatically.
 
 1. Dashboard > API keys (test mode first): set `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and `NEXT_PUBLIC_RAZORPAY_KEY_ID`.
 2. Dashboard > Webhooks: URL `https://<your-domain>/api/razorpay/webhook`, events `payment_link.paid` and `order.paid`. Put the secret in `RAZORPAY_WEBHOOK_SECRET`.
